@@ -5,13 +5,13 @@ namespace Storage;
 /// <summary>
 /// Transport functions
 /// </summary>
-public sealed partial class S3Client
+public partial class S3BucketClient
 {
 	[SkipLocalsInit]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private HttpRequestMessage CreateRequest(HttpMethod method, string? fileName = null)
 	{
-		var url = new ValueStringBuilder(stackalloc char[512], ArrayPool);
+		var url = new ValueStringBuilder(stackalloc char[512], _arrayPool);
 		url.Append(_bucket);
 
 		// ReSharper disable once InvertIf
@@ -34,7 +34,7 @@ public sealed partial class S3Client
 		var now = DateTime.UtcNow;
 
 		var headers = request.Headers;
-		headers.Add("host", _endpoint);
+		headers.Add("host", _host);
 		headers.Add("x-amz-content-sha256", payloadHash);
 		headers.Add("x-amz-date", now.ToString(Signature.Iso8601DateTime, CultureInfo.InvariantCulture));
 

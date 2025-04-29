@@ -3,34 +3,22 @@ using System.Text;
 
 namespace Storage.Utils;
 
-internal sealed class HttpDescription
+internal sealed class HttpDescription(
+	IArrayPool arrayPool,
+	string accessKey,
+	string region,
+	string service,
+	string[] signedHeaders)
 {
 	private static readonly FrozenSet<char> ValidUrlCharacters =
 		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~/".ToFrozenSet();
 
-	public readonly IArrayPool ArrayPool;
 
-	private readonly string _headerEnd;
-	private readonly string _headerStart;
+	private readonly string _headerEnd = $"/{region}/{service}/aws4_request, SignedHeaders={string.Join(';', signedHeaders)}, Signature=";
+	private readonly string _headerStart = $"AWS4-HMAC-SHA256 Credential={accessKey}/";
 
-	private readonly string _urlMiddle;
-	private readonly string _urlStart;
-
-	public HttpDescription(
-		IArrayPool arrayPool,
-		string accessKey,
-		string region,
-		string service,
-		string[] signedHeaders)
-	{
-		ArrayPool = arrayPool;
-
-		_headerStart = $"AWS4-HMAC-SHA256 Credential={accessKey}/";
-		_headerEnd = $"/{region}/{service}/aws4_request, SignedHeaders={string.Join(';', signedHeaders)}, Signature=";
-
-		_urlStart = $"?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={accessKey}%2F";
-		_urlMiddle = $"%2F{region}%2F{service}%2Faws4_request";
-	}
+	private readonly string _urlMiddle = $"%2F{region}%2F{service}%2Faws4_request";
+	private readonly string _urlStart = $"?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={accessKey}%2F";
 
 	[SkipLocalsInit]
 	public bool AppendEncodedName(scoped ref ValueStringBuilder builder, ReadOnlySpan<char> name)
@@ -38,7 +26,7 @@ internal sealed class HttpDescription
 		var count = Encoding.UTF8.GetByteCount(name);
 		var hasEncoded = false;
 
-		var byteBuffer = ArrayPool.Rent<byte>(count);
+		var byteBuffer = arrayPool.Rent<byte>(count);
 
 		Span<char> charBuffer = stackalloc char[2];
 		Span<char> upperBuffer = stackalloc char[2];
@@ -72,14 +60,14 @@ internal sealed class HttpDescription
 		}
 		finally
 		{
-			ArrayPool.Return(byteBuffer);
+			arrayPool.Return(byteBuffer);
 		}
 	}
 
 	[SkipLocalsInit]
 	public string EncodeName(string fileName)
 	{
-		var builder = new ValueStringBuilder(stackalloc char[fileName.Length], ArrayPool);
+		var builder = new ValueStringBuilder(stackalloc char[fileName.Length], arrayPool);
 		var encoded = AppendEncodedName(ref builder, fileName);
 
 		return encoded
@@ -90,7 +78,7 @@ internal sealed class HttpDescription
 	[SkipLocalsInit]
 	public string BuildHeader(DateTime now, string signature)
 	{
-		using var builder = new ValueStringBuilder(stackalloc char[512], ArrayPool);
+		using var builder = new ValueStringBuilder(stackalloc char[512], arrayPool);
 
 		builder.Append(_headerStart);
 		builder.Append(now, Signature.Iso8601Date);
@@ -103,7 +91,7 @@ internal sealed class HttpDescription
 	[SkipLocalsInit]
 	public string BuildUrl(string bucket, string fileName, DateTime now, TimeSpan expires)
 	{
-		var builder = new ValueStringBuilder(stackalloc char[512], ArrayPool);
+		var builder = new ValueStringBuilder(stackalloc char[512], arrayPool);
 
 		builder.Append(bucket);
 		builder.Append('/');

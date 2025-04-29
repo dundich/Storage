@@ -1,4 +1,4 @@
-﻿using Storage.Utils;
+using Storage.Utils;
 
 namespace Storage;
 
@@ -8,7 +8,7 @@ namespace Storage;
 public sealed class S3Upload : IDisposable
 {
 	private readonly IArrayPool _arrayPool;
-	private readonly S3Client _client;
+	private readonly S3BucketClient _client;
 	private readonly string _encodedFileName;
 
 	private byte[]? _byteBuffer;
@@ -16,16 +16,16 @@ public sealed class S3Upload : IDisposable
 	private int _partCount;
 	private string[] _parts;
 
-	internal S3Upload(S3Client client, string fileName, string encodedFileName, string uploadId)
+	internal S3Upload(S3BucketClient client, string fileName, string encodedFileName, string uploadId, IArrayPool? arrayPool = null)
 	{
 		FileName = fileName;
 		UploadId = uploadId;
 
-		_arrayPool = client.ArrayPool;
+		_arrayPool = arrayPool ?? DefaultArrayPool.Instance;
 		_client = client;
 		_encodedFileName = encodedFileName;
 
-		_parts = client.ArrayPool.Rent<string>(16);
+		_parts = _arrayPool.Rent<string>(16);
 	}
 
 	/// <summary>
@@ -126,7 +126,7 @@ public sealed class S3Upload : IDisposable
 	/// <returns>Возвращает результат загрузки</returns>
 	public async Task<bool> AddParts(Stream data, CancellationToken ct)
 	{
-		_byteBuffer ??= _arrayPool.Rent<byte>(S3Client.DefaultPartSize);
+		_byteBuffer ??= _arrayPool.Rent<byte>(S3BucketClient.DefaultPartSize);
 
 		while (true)
 		{
@@ -153,7 +153,7 @@ public sealed class S3Upload : IDisposable
 	/// <returns>Возвращает результат загрузки</returns>
 	public async Task<bool> AddParts(byte[] data, CancellationToken ct)
 	{
-		_byteBuffer ??= ArrayPool<byte>.Shared.Rent(S3Client.DefaultPartSize);
+		_byteBuffer ??= ArrayPool<byte>.Shared.Rent(S3BucketClient.DefaultPartSize);
 
 		var bufferLength = _byteBuffer.Length;
 		var offset = 0;

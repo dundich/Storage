@@ -1,4 +1,4 @@
-﻿namespace Storage;
+namespace Storage;
 
 internal sealed class DefaultArrayPool : IArrayPool
 {
@@ -13,7 +13,7 @@ internal sealed class DefaultArrayPool : IArrayPool
 		return ArrayPool<T>.Shared.Rent(minimumLength);
 	}
 
-	public void Return<T>(T[] array, bool clear)
+	public void Return<T>(T[] array, bool clear = false)
 	{
 		ArrayPool<T>.Shared.Return(array, clear);
 	}

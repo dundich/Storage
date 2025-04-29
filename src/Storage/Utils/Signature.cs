@@ -1,18 +1,18 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 
 // ReSharper disable ReplaceWithPrimaryConstructorParameter
 
 namespace Storage.Utils;
 
-internal sealed class Signature(HttpDescription description, string secretKey, string region, string service)
+internal sealed class Signature(HttpDescription description, string secretKey, string region, string service, IArrayPool? arrayProvider = null)
 {
 	public const string Iso8601DateTime = "yyyyMMddTHHmmssZ";
 	public const string Iso8601Date = "yyyyMMdd";
 
-	private static SortedDictionary<string, string>? _headerSort = new();
+	private static SortedDictionary<string, string>? _headerSort = [];
 
-	private readonly IArrayPool _arrayPool = description.ArrayPool;
+	private readonly IArrayPool _arrayPool = arrayProvider ?? DefaultArrayPool.Instance;
 	private readonly HttpDescription _description = description;
 	private readonly byte[] _secretKey = Encoding.UTF8.GetBytes($"AWS4{secretKey}");
 	private readonly string _scope = $"/{region}/{service}/aws4_request\n";
@@ -60,7 +60,7 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		HttpRequestMessage request,
 		string[] signedHeaders)
 	{
-		var sortedHeaders = Interlocked.Exchange(ref _headerSort, null) ?? new SortedDictionary<string, string>();
+		var sortedHeaders = Interlocked.Exchange(ref _headerSort, null) ?? [];
 		foreach (var requestHeader in request.Headers)
 		{
 			var header = NormalizeHeader(requestHeader.Key);

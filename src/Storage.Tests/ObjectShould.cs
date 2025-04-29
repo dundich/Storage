@@ -5,10 +5,10 @@ namespace Storage.Tests;
 
 public sealed class ObjectShould : IClassFixture<StorageFixture>
 {
-	private readonly S3Client _client;
+	private readonly S3BucketClient _client;		
 	private readonly CancellationToken _ct;
 	private readonly StorageFixture _fixture;
-	private readonly S3Client _notExistsBucketClient; // don't dispose it
+	private readonly S3BucketClient _notExistsBucketClient; // don't dispose it
 
 	public ObjectShould(StorageFixture fixture)
 	{
@@ -70,9 +70,9 @@ public sealed class ObjectShould : IClassFixture<StorageFixture>
 				.IsCompletedSuccessfully
 				.Should().BeTrue();
 
-			task
-				.Result
-				.Should().BeTrue();
+			var result = await task;
+
+			result.Should().BeTrue();
 
 			task.Dispose();
 		}
@@ -372,7 +372,7 @@ public sealed class ObjectShould : IClassFixture<StorageFixture>
 		var file = await _client.GetFile(fileName, _ct);
 		var fileStream = await file.GetStream(_ct);
 
-#pragma warning disable CA1835
+
 		var read = await fileStream.ReadAsync(buffer, _ct);
 		read.Should().BeGreaterThan(0);
 
@@ -382,7 +382,7 @@ public sealed class ObjectShould : IClassFixture<StorageFixture>
 		// ReSharper disable once MethodHasAsyncOverloadWithCancellation
 		read = fileStream.Read(buffer, 10, 20);
 		read.Should().BeGreaterThan(0);
-#pragma warning restore CA1835
+
 
 		await DeleteTestFile(fileName);
 	}
@@ -512,7 +512,7 @@ public sealed class ObjectShould : IClassFixture<StorageFixture>
 	[InlineData("another/path/test.mp3", 2048)]
 	public async Task UploadFileWithNestedPath(string nestedFileName, int dataSize)
 	{
-		var data = GetByteArray(dataSize); // Пример данных, которые вы хотите загрузить
+		var data = GetByteArray(dataSize);
 
 		// Act
 		var result = await _client.UploadFile(nestedFileName, StreamContentType, data, _ct);

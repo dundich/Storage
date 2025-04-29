@@ -161,7 +161,7 @@ internal ref struct ValueStringBuilder(Span<char> initialBuffer, IArrayPool arra
 		var toReturn = _array;
 		if (toReturn is not null)
 		{
-			ArrayPool<char>.Shared.Return(toReturn);
+			_arrayPool.Return(toReturn);
 		}
 	}
 

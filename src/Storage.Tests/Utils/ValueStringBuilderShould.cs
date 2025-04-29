@@ -17,6 +17,7 @@ public class ValueStringBuilderShould
 		}
 
 		builder.Length.Should().Be(stringLength);
+		builder.Dispose();
 	}
 
 	[Fact]
@@ -26,6 +27,7 @@ public class ValueStringBuilderShould
 		builder
 			.ToString()
 			.Should().BeEmpty();
+		builder.Dispose();
 	}
 
 	[Fact]
@@ -36,5 +38,6 @@ public class ValueStringBuilderShould
 
 		builder.Length
 			.Should().BeGreaterThan(-1);
+		builder.Dispose();
 	}
 }
