@@ -1,8 +1,8 @@
 namespace Storage.Utils;
 
-internal sealed class HeadBuilder(string accessKey, string region, string service, IArrayPool arrayPool)
+internal sealed class HeadBuilder(string accessKey, string region, string service)
 {
-
+	// head
 	public static readonly string[] S3Headers = // trimmed, lower invariant, ordered
 	[
 		"host",
@@ -17,9 +17,9 @@ internal sealed class HeadBuilder(string accessKey, string region, string servic
 
 
 	[SkipLocalsInit]
-	public string BuildAuthorization(DateTime now, string signature)
+	public string BuildAuthorizationValue(DateTime now, string signature)
 	{
-		using var builder = new ValueStringBuilder(stackalloc char[512], arrayPool);
+		using var builder = new ValueStringBuilder(stackalloc char[512]);
 
 		builder.Append(_headerStart);
 		builder.Append(now, Signature.Iso8601Date);

@@ -1,5 +1,5 @@
-using System.Text;
 using Storage.Utils;
+using System.Text;
 using static Storage.Utils.HashHelper;
 
 namespace Storage;
@@ -69,12 +69,12 @@ public partial class S3BucketClient
 			.Append("</CompleteMultipartUpload>")
 			.Flush();
 
-		var payloadHash = GetPayloadHash(data, _arrayPool);
+		var payloadHash = GetPayloadHash(data);
 
 		HttpResponseMessage response;
 		using (var request = new HttpRequestMessage(
-			       HttpMethod.Post,
-			       $"{_bucket}/{encodedFileName}?uploadId={uploadId}"))
+				   HttpMethod.Post,
+				   $"{_bucket}/{encodedFileName}?uploadId={uploadId}"))
 		{
 			using var content = new StringContent(data, Encoding.UTF8);
 			request.Content = content;
@@ -95,7 +95,7 @@ public partial class S3BucketClient
 		int partSize,
 		CancellationToken ct)
 	{
-		var payloadHash = GetPayloadHash(partData.AsSpan(0, partSize), _arrayPool);
+		var payloadHash = GetPayloadHash(partData.AsSpan(0, partSize));
 		var url = $"{_bucket}/{encodedFileName}?partNumber={partNumber}&uploadId={uploadId}";
 
 		HttpResponseMessage response;
@@ -150,8 +150,10 @@ public partial class S3BucketClient
 		return false;
 	}
 
-	private async Task<string> MultipartStart(string encodedFileName, string contentType, CancellationToken ct)
+	private async Task<S3Upload> MultipartStart(string fileName, string contentType, CancellationToken ct)
 	{
+		var encodedFileName = StringUtils.UrlEncodeName(fileName);
+
 		HttpResponseMessage response;
 		using (var request = new HttpRequestMessage(HttpMethod.Post, $"{_bucket}/{encodedFileName}?uploads"))
 		{
@@ -165,15 +167,16 @@ public partial class S3BucketClient
 		if (response.StatusCode is HttpStatusCode.OK)
 		{
 			var responseStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-			var result = XmlStreamReader.ReadString(responseStream, "UploadId");
+			var uploadId = XmlStreamReader.ReadString(responseStream, "UploadId");
 
 			await responseStream.DisposeAsync().ConfigureAwait(false);
 			response.Dispose();
 
-			return result;
+			return new S3Upload(this, fileName, encodedFileName, uploadId, ArrayPool);
 		}
 
 		Errors.UnexpectedResult(response);
-		return string.Empty;
+
+		return null;
 	}
 }

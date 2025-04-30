@@ -2,7 +2,7 @@ namespace Storage;
 
 
 [Obsolete("Use S3BucketClient instead.")]
-public sealed class S3Client(S3Settings settings, HttpClient? client = null, IArrayPool? arrayProvider = null)
-	: S3BucketClient(client ?? new HttpClient(), settings.MapToBucketSettings(), arrayProvider)
+public sealed class S3Client(S3Settings settings, HttpClient? client = null)
+	: S3BucketClient(client ?? new HttpClient(), settings.MapToBucketSettings())
 {
 }

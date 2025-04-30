@@ -16,12 +16,12 @@ public sealed class S3Upload : IDisposable
 	private int _partCount;
 	private string[] _parts;
 
-	internal S3Upload(S3BucketClient client, string fileName, string encodedFileName, string uploadId, IArrayPool? arrayPool = null)
+	internal S3Upload(S3BucketClient client, string fileName, string encodedFileName, string uploadId, IArrayPool arrayPool)
 	{
 		FileName = fileName;
 		UploadId = uploadId;
 
-		_arrayPool = arrayPool ?? DefaultArrayPool.Instance;
+		_arrayPool = arrayPool;
 		_client = client;
 		_encodedFileName = encodedFileName;
 

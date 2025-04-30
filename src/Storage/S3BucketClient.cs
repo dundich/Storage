@@ -13,28 +13,26 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 {
 	internal const int DefaultPartSize = 5 * 1024 * 1024; // 5 Mb
 
-
-	private readonly IArrayPool _arrayPool;
+	private static IArrayPool ArrayPool => DefaultArrayPool.Instance;
 
 	private readonly string _bucket;
 	private readonly HttpClient _client;
 	private readonly string _host;
-	private readonly HeadBuilder _headBuilder;
-	private readonly UrlBuilder _urlBuilder;
 	private readonly Signature _signature;
+	private readonly HeadBuilder _headBuilder;
 	private readonly bool _useHttp2;
 
+	private readonly string _urlMiddle;
+	private readonly string _urlStart;
 
 	private bool _disposed;
-
 
 	public string Bucket { get; }
 	public Uri Endpoint { get; }
 
-	public S3BucketClient(HttpClient client, S3BucketSettings settings, IArrayPool? arrayProvider = null)
+	public S3BucketClient(HttpClient client, S3BucketSettings settings)
 	{
 		Bucket = settings.Bucket ?? throw new ArgumentException(nameof(settings.Bucket));
-
 		Endpoint = new Uri(settings.Endpoint);
 
 		_bucket = $"{Endpoint.AbsoluteUri}{Bucket.ToLowerInvariant()}";
@@ -42,12 +40,11 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 		_host = $"{Endpoint.Host}:{Endpoint.Port}";
 		_useHttp2 = settings.UseHttp2;
 
-		_arrayPool = arrayProvider ?? DefaultArrayPool.Instance;
+		_urlMiddle = $"%2F{settings.Region}%2F{settings.Service}%2Faws4_request";
+		_urlStart = $"?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential={settings.AccessKey}%2F";
 
-		_urlBuilder = new UrlBuilder(settings.AccessKey, settings.Region, settings.Service, _arrayPool);
-		_headBuilder = new HeadBuilder(settings.AccessKey, settings.Region, settings.Service, _arrayPool);
-
-		_signature = new Signature(_urlBuilder, settings.SecretKey, _arrayPool);
+		_signature = new Signature(settings.Region, settings.Service, settings.SecretKey);
+		_headBuilder = new HeadBuilder(settings.AccessKey, settings.Region, settings.Service);
 	}
 
 	/// <summary>
@@ -59,10 +56,33 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 	public string BuildFileUrl(string fileName, TimeSpan expiration)
 	{
 		var now = DateTime.UtcNow; // TODO!!!
-		var url = _urlBuilder.BuildUrl(_bucket, fileName, now, expiration);
+		var url = BuildFileUrl(_bucket, fileName, now, expiration);
 		var signature = _signature.Calculate(url, now);
 
 		return $"{url}&X-Amz-Signature={signature}";
+	}
+
+	public string BuildFileUrl(string bucket, string fileName, DateTime now, TimeSpan expires)
+	{
+		var builder = new ValueStringBuilder(stackalloc char[512]);
+
+		builder.Append(bucket);
+		builder.Append('/');
+
+		StringUtils.AppendEncodedName(ref builder, fileName);
+
+		builder.Append(_urlStart);
+		builder.Append(now, Signature.Iso8601Date);
+		builder.Append(_urlMiddle);
+
+		builder.Append("&X-Amz-Date=");
+		builder.Append(now, Signature.Iso8601DateTime);
+		builder.Append("&X-Amz-Expires=");
+		builder.Append(expires.TotalSeconds);
+
+		builder.Append("&X-Amz-SignedHeaders=host");
+
+		return builder.Flush();
 	}
 
 	public async Task DeleteFile(string fileName, CancellationToken ct)
@@ -170,7 +190,7 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 	{
 		var url = string.IsNullOrEmpty(prefix)
 			? $"{_bucket}?list-type=2"
-			: $"{_bucket}?list-type=2&prefix={_urlBuilder.EncodeName(prefix)}";
+			: $"{_bucket}?list-type=2&prefix={StringUtils.UrlEncodeName(prefix)}";
 
 		HttpResponseMessage response;
 		using (var request = new HttpRequestMessage(HttpMethod.Get, url))
@@ -213,10 +233,7 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 	/// <returns>Возвращает объект управления загрузкой</returns>
 	public async Task<S3Upload> UploadFile(string fileName, string contentType, CancellationToken ct)
 	{
-		var encodedFileName = _urlBuilder.EncodeName(fileName);
-		var uploadId = await MultipartStart(encodedFileName, contentType, ct).ConfigureAwait(false);
-
-		return new S3Upload(this, fileName, encodedFileName, uploadId, _arrayPool);
+		return await MultipartStart(fileName, contentType, ct).ConfigureAwait(false);
 	}
 
 	/// <summary>
@@ -261,10 +278,10 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 		Stream data,
 		CancellationToken ct)
 	{
-		var buffer = _arrayPool.Rent<byte>((int)data.Length); // размер точно есть
+		var buffer = ArrayPool.Rent<byte>((int)data.Length); // размер точно есть
 		var dataSize = await data.ReadAsync(buffer, ct).ConfigureAwait(false);
 
-		var payloadHash = GetPayloadHash(buffer.AsSpan(0, dataSize), _arrayPool);
+		var payloadHash = GetPayloadHash(buffer.AsSpan(0, dataSize));
 
 		HttpResponseMessage response;
 		using (var request = CreateRequest(HttpMethod.Put, fileName))
@@ -279,7 +296,7 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 			}
 			finally
 			{
-				_arrayPool.Return(buffer);
+				ArrayPool.Return(buffer);
 			}
 		}
 
@@ -300,7 +317,7 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 		int length,
 		CancellationToken ct)
 	{
-		var payloadHash = GetPayloadHash(data, _arrayPool);
+		var payloadHash = GetPayloadHash(data);
 
 		HttpResponseMessage response;
 		using (var request = CreateRequest(HttpMethod.Put, fileName))

@@ -11,17 +11,8 @@ public partial class S3BucketClient
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private HttpRequestMessage CreateRequest(HttpMethod method, string? fileName = null)
 	{
-		var url = new ValueStringBuilder(stackalloc char[512], _arrayPool);
-		url.Append(_bucket);
-
-		// ReSharper disable once InvertIf
-		if (!string.IsNullOrEmpty(fileName))
-		{
-			url.Append('/');
-			_urlBuilder.AppendEncodedName(ref url, fileName);
-		}
-
-		return new HttpRequestMessage(method, new Uri(url.Flush(), UriKind.Absolute));
+		var url = StringUtils.BuildFileUrl(_bucket, fileName);
+		return new HttpRequestMessage(method, new Uri(url, UriKind.Absolute));
 	}
 
 	private Task<HttpResponseMessage> Send(HttpRequestMessage request, string payloadHash, CancellationToken ct)
@@ -43,8 +34,9 @@ public partial class S3BucketClient
 			request.Version = HttpVersion.Version20;
 		}
 
-		var signature = _signature.Calculate(request, payloadHash, HeadBuilder.S3Headers, now);
-		headers.TryAddWithoutValidation("Authorization", _headBuilder.BuildAuthorization(now, signature));
+		var signature = _signature.Calculate(request, payloadHash, now);
+
+		headers.TryAddWithoutValidation("Authorization", _headBuilder.BuildAuthorizationValue(now, signature));
 
 		return _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 	}
