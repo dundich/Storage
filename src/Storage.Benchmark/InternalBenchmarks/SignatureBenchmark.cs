@@ -1,4 +1,4 @@
-﻿using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Jobs;
 using Storage.Benchmark.Utils;
 using Storage.Utils;
@@ -23,13 +23,13 @@ public class SignatureBenchmark
 		var data = BenchmarkHelper.ReadBigArray(config);
 		var settings = BenchmarkHelper.ReadSettings(config);
 
+		var urlBuilder = new UrlBuilder(settings.SecretKey, settings.Region, settings.Service, DefaultArrayPool.Instance);	
+
 		_headers = ["host", "x-amz-content-sha256", "x-amz-date"];
 		_now = DateTime.UtcNow;
 		_request = new HttpRequestMessage(HttpMethod.Post, "http://company-name.com/controller");
 		_payloadHash = HashHelper.GetPayloadHash(data, DefaultArrayPool.Instance);
-		_signature = new Signature(
-			new HttpDescription(DefaultArrayPool.Instance, "", "", "", []),
-			settings.SecretKey, settings.Region, settings.Service);
+		_signature = new Signature(urlBuilder, settings.SecretKey, DefaultArrayPool.Instance);
 	}
 
 	[Benchmark]

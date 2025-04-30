@@ -1,21 +1,19 @@
 using System.Security.Cryptography;
 using System.Text;
 
-// ReSharper disable ReplaceWithPrimaryConstructorParameter
-
 namespace Storage.Utils;
 
-internal sealed class Signature(HttpDescription description, string secretKey, string region, string service, IArrayPool? arrayProvider = null)
+internal sealed class Signature(UrlBuilder urlBuider, string secretKey, IArrayPool arrayPool)
 {
+
 	public const string Iso8601DateTime = "yyyyMMddTHHmmssZ";
 	public const string Iso8601Date = "yyyyMMdd";
 
 	private static SortedDictionary<string, string>? _headerSort = [];
 
-	private readonly IArrayPool _arrayPool = arrayProvider ?? DefaultArrayPool.Instance;
-	private readonly HttpDescription _description = description;
 	private readonly byte[] _secretKey = Encoding.UTF8.GetBytes($"AWS4{secretKey}");
-	private readonly string _scope = $"/{region}/{service}/aws4_request\n";
+	private readonly string _scope = $"/{urlBuider.Region}/{urlBuider.Service}/aws4_request\n";
+
 
 	[SkipLocalsInit]
 	public string Calculate(
@@ -24,7 +22,7 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		string[] signedHeaders,
 		DateTime requestDate)
 	{
-		var builder = new ValueStringBuilder(stackalloc char[512], _arrayPool);
+		var builder = new ValueStringBuilder(stackalloc char[512], arrayPool);
 
 		AppendStringToSign(ref builder, requestDate);
 		AppendCanonicalRequestHash(ref builder, request, signedHeaders, payloadHash);
@@ -35,13 +33,13 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		signature = signature[..Sign(ref signature, signature, builder.AsReadonlySpan())];
 		builder.Dispose();
 
-		return HashHelper.ToHex(signature, _arrayPool);
+		return HashHelper.ToHex(signature, arrayPool);
 	}
 
 	[SkipLocalsInit]
 	public string Calculate(string url, DateTime requestDate)
 	{
-		var builder = new ValueStringBuilder(stackalloc char[512], _arrayPool);
+		var builder = new ValueStringBuilder(stackalloc char[512], arrayPool);
 
 		AppendStringToSign(ref builder, requestDate);
 		AppendCanonicalRequestHash(ref builder, url);
@@ -52,7 +50,7 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		signature = signature[..Sign(ref signature, signature, builder.AsReadonlySpan())];
 		builder.Dispose();
 
-		return HashHelper.ToHex(signature, _arrayPool);
+		return HashHelper.ToHex(signature, arrayPool);
 	}
 
 	private void AppendCanonicalHeaders(
@@ -95,71 +93,8 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		Interlocked.Exchange(ref _headerSort, sortedHeaders);
 	}
 
-	private void AppendCanonicalQueryParameters(scoped ref ValueStringBuilder builder, string? query)
-	{
-		if (string.IsNullOrEmpty(query) || query == "?")
-		{
-			return;
-		}
 
-		var scanIndex = 0;
-		if (query[0] is '?')
-		{
-			scanIndex = 1;
-		}
 
-		var textLength = query.Length;
-		var equalIndex = query.IndexOf('=', StringComparison.Ordinal);
-		if (equalIndex is -1)
-		{
-			equalIndex = textLength;
-		}
-
-		while (scanIndex < textLength)
-		{
-			var delimiter = query.IndexOf('&', scanIndex);
-			if (delimiter is -1)
-			{
-				delimiter = textLength;
-			}
-
-			if (equalIndex < delimiter)
-			{
-				while (scanIndex != equalIndex && char.IsWhiteSpace(query[scanIndex]))
-				{
-					++scanIndex;
-				}
-
-				var name = UnescapeString(query.AsSpan(scanIndex, equalIndex - scanIndex));
-				_description.AppendEncodedName(ref builder, name);
-				builder.Append('=');
-
-				var value = UnescapeString(query.AsSpan(equalIndex + 1, delimiter - equalIndex - 1));
-				_description.AppendEncodedName(ref builder, value);
-				builder.Append('&');
-
-				equalIndex = query.IndexOf('=', delimiter);
-				if (equalIndex is -1)
-				{
-					equalIndex = textLength;
-				}
-			}
-			else
-			{
-				if (delimiter > scanIndex)
-				{
-					_description.AppendEncodedName(ref builder, query.AsSpan(scanIndex, delimiter - scanIndex));
-					builder.Append('=');
-					_description.AppendEncodedName(ref builder, string.Empty);
-					builder.Append('&');
-				}
-			}
-
-			scanIndex = delimiter + 1;
-		}
-
-		builder.RemoveLast();
-	}
 
 	[SkipLocalsInit]
 	private void AppendCanonicalRequestHash(
@@ -168,7 +103,7 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		string[] signedHeaders,
 		string payload)
 	{
-		var canonical = new ValueStringBuilder(stackalloc char[512], _arrayPool);
+		var canonical = new ValueStringBuilder(stackalloc char[512], arrayPool);
 		var uri = request.RequestUri!;
 
 		const char newLine = '\n';
@@ -178,7 +113,7 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		canonical.Append(uri.AbsolutePath);
 		canonical.Append(newLine);
 
-		AppendCanonicalQueryParameters(ref canonical, uri.Query);
+		urlBuider.AppendCanonicalQueryParameters(ref canonical, uri.Query);
 		canonical.Append(newLine);
 
 		AppendCanonicalHeaders(ref canonical, request, signedHeaders);
@@ -214,7 +149,7 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 	{
 		var uri = new Uri(url);
 
-		var canonical = new ValueStringBuilder(stackalloc char[256], _arrayPool);
+		var canonical = new ValueStringBuilder(stackalloc char[256], arrayPool);
 		canonical.Append("GET\n"); // canonical request
 		canonical.Append(uri.AbsolutePath);
 		canonical.Append('\n');
@@ -243,7 +178,7 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 	{
 		var count = Encoding.UTF8.GetByteCount(value);
 
-		var byteBuffer = _arrayPool.Rent<byte>(count);
+		var byteBuffer = arrayPool.Rent<byte>(count);
 
 		var encoded = Encoding.UTF8.GetBytes(value, byteBuffer);
 
@@ -258,13 +193,13 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 			}
 		}
 
-		_arrayPool.Return(byteBuffer);
+		arrayPool.Return(byteBuffer);
 	}
 
 	[SkipLocalsInit]
 	private string NormalizeHeader(string header)
 	{
-		using var builder = new ValueStringBuilder(stackalloc char[header.Length], _arrayPool);
+		using var builder = new ValueStringBuilder(stackalloc char[header.Length], arrayPool);
 		var culture = CultureInfo.InvariantCulture;
 
 		// ReSharper disable once ForeachCanBePartlyConvertedToQueryUsingAnotherGetEnumerator
@@ -278,34 +213,23 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		return string.Intern(builder.Flush());
 	}
 
-	[SuppressMessage("ReSharper", "InvertIf", Justification = "Approved")]
 	private int Sign(ref Span<byte> buffer, ReadOnlySpan<byte> key, scoped ReadOnlySpan<char> content)
 	{
 		var count = Encoding.UTF8.GetByteCount(content);
 
-		var byteBuffer = _arrayPool.Rent<byte>(count);
+		var byteBuffer = arrayPool.Rent<byte>(count);
 
 		var encoded = Encoding.UTF8.GetBytes(content, byteBuffer);
 		var result = HMACSHA256.TryHashData(key, byteBuffer.AsSpan(0, encoded), buffer, out var written)
 			? written
 			: -1;
 
-		_arrayPool.Return(byteBuffer);
+		arrayPool.Return(byteBuffer);
 
 		return result;
 	}
 
-	[SkipLocalsInit]
-	private string UnescapeString(ReadOnlySpan<char> query)
-	{
-		using var data = new ValueStringBuilder(stackalloc char[query.Length], _arrayPool);
-		foreach (var ch in query)
-		{
-			data.Append(ch is '+' ? ' ' : ch);
-		}
 
-		return Uri.UnescapeDataString(data.Flush());
-	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	private void AppendStringToSign(ref ValueStringBuilder builder, DateTime requestDate)
@@ -324,8 +248,8 @@ internal sealed class Signature(HttpDescription description, string secretKey, s
 		Span<char> dateBuffer = stackalloc char[16];
 
 		Sign(ref buffer, _secretKey, dateBuffer[..StringUtils.Format(ref dateBuffer, requestDate, Iso8601Date)]);
-		Sign(ref buffer, buffer, region);
-		Sign(ref buffer, buffer, service);
+		Sign(ref buffer, buffer, urlBuider.Region);
+		Sign(ref buffer, buffer, urlBuider.Service);
 		Sign(ref buffer, buffer, "aws4_request");
 	}
 }

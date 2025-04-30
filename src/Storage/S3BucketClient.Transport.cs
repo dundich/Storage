@@ -18,7 +18,7 @@ public partial class S3BucketClient
 		if (!string.IsNullOrEmpty(fileName))
 		{
 			url.Append('/');
-			_httpDescription.AppendEncodedName(ref url, fileName);
+			_urlBuilder.AppendEncodedName(ref url, fileName);
 		}
 
 		return new HttpRequestMessage(method, new Uri(url.Flush(), UriKind.Absolute));
@@ -31,7 +31,7 @@ public partial class S3BucketClient
 			Errors.Disposed();
 		}
 
-		var now = DateTime.UtcNow;
+		var now = DateTime.UtcNow; // TODO: !!
 
 		var headers = request.Headers;
 		headers.Add("host", _host);
@@ -43,8 +43,8 @@ public partial class S3BucketClient
 			request.Version = HttpVersion.Version20;
 		}
 
-		var signature = _signature.Calculate(request, payloadHash, S3Headers, now);
-		headers.TryAddWithoutValidation("Authorization", _httpDescription.BuildHeader(now, signature));
+		var signature = _signature.Calculate(request, payloadHash, HeadBuilder.S3Headers, now);
+		headers.TryAddWithoutValidation("Authorization", _headBuilder.BuildAuthorization(now, signature));
 
 		return _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 	}

@@ -1,13 +1,12 @@
 namespace Storage.Utils;
 
+[DebuggerDisplay("{ToString()}")]
 internal ref struct ValueStringBuilder(Span<char> initialBuffer, IArrayPool arrayPool)
 {
 	private Span<char> _buffer = initialBuffer;
 	private int _length = 0;
 	private char[]? _array = null;
 
-	// ReSharper disable once ReplaceWithPrimaryConstructorParameter
-	private readonly IArrayPool _arrayPool = arrayPool;
 
 	// ReSharper disable once ConvertToAutoPropertyWithPrivateSetter
 	public readonly int Length
@@ -161,7 +160,7 @@ internal ref struct ValueStringBuilder(Span<char> initialBuffer, IArrayPool arra
 		var toReturn = _array;
 		if (toReturn is not null)
 		{
-			_arrayPool.Return(toReturn);
+			arrayPool.Return(toReturn);
 		}
 	}
 
@@ -210,7 +209,7 @@ internal ref struct ValueStringBuilder(Span<char> initialBuffer, IArrayPool arra
 			(uint)(_length + additionalCapacityBeyondPos),
 			Math.Min((uint)_buffer.Length * 2, arrayMaxLength));
 
-		var poolArray = _arrayPool.Rent<char>(newCapacity);
+		var poolArray = arrayPool.Rent<char>(newCapacity);
 
 		_buffer[.._length].CopyTo(poolArray);
 
@@ -218,7 +217,7 @@ internal ref struct ValueStringBuilder(Span<char> initialBuffer, IArrayPool arra
 		_buffer = _array = poolArray;
 		if (toReturn is not null)
 		{
-			_arrayPool.Return(toReturn);
+			arrayPool.Return(toReturn);
 		}
 	}
 }

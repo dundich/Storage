@@ -13,23 +13,17 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 {
 	internal const int DefaultPartSize = 5 * 1024 * 1024; // 5 Mb
 
-	private static readonly string[] S3Headers = // trimmed, lower invariant, ordered
-	[
-		"host",
-		"x-amz-content-sha256",
-		"x-amz-date",
-	];
-
 
 	private readonly IArrayPool _arrayPool;
 
 	private readonly string _bucket;
 	private readonly HttpClient _client;
 	private readonly string _host;
-	private readonly HttpDescription _httpDescription;
+	private readonly HeadBuilder _headBuilder;
+	private readonly UrlBuilder _urlBuilder;
 	private readonly Signature _signature;
 	private readonly bool _useHttp2;
-	
+
 
 	private bool _disposed;
 
@@ -50,14 +44,10 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 
 		_arrayPool = arrayProvider ?? DefaultArrayPool.Instance;
 
-		_httpDescription = new HttpDescription(
-			_arrayPool,
-			settings.AccessKey,
-			settings.Region,
-			settings.Service,
-			S3Headers);
+		_urlBuilder = new UrlBuilder(settings.AccessKey, settings.Region, settings.Service, _arrayPool);
+		_headBuilder = new HeadBuilder(settings.AccessKey, settings.Region, settings.Service, _arrayPool);
 
-		_signature = new Signature(_httpDescription, settings.SecretKey, settings.Region, settings.Service, _arrayPool);
+		_signature = new Signature(_urlBuilder, settings.SecretKey, _arrayPool);
 	}
 
 	/// <summary>
@@ -68,8 +58,8 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 	/// <returns>Возвращает подписанную ссылку на файл</returns>
 	public string BuildFileUrl(string fileName, TimeSpan expiration)
 	{
-		var now = DateTime.UtcNow;
-		var url = _httpDescription.BuildUrl(_bucket, fileName, now, expiration);
+		var now = DateTime.UtcNow; // TODO!!!
+		var url = _urlBuilder.BuildUrl(_bucket, fileName, now, expiration);
 		var signature = _signature.Calculate(url, now);
 
 		return $"{url}&X-Amz-Signature={signature}";
@@ -180,7 +170,7 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 	{
 		var url = string.IsNullOrEmpty(prefix)
 			? $"{_bucket}?list-type=2"
-			: $"{_bucket}?list-type=2&prefix={_httpDescription.EncodeName(prefix)}";
+			: $"{_bucket}?list-type=2&prefix={_urlBuilder.EncodeName(prefix)}";
 
 		HttpResponseMessage response;
 		using (var request = new HttpRequestMessage(HttpMethod.Get, url))
@@ -223,7 +213,7 @@ public partial class S3BucketClient : IS3BucketClient, IDisposable
 	/// <returns>Возвращает объект управления загрузкой</returns>
 	public async Task<S3Upload> UploadFile(string fileName, string contentType, CancellationToken ct)
 	{
-		var encodedFileName = _httpDescription.EncodeName(fileName);
+		var encodedFileName = _urlBuilder.EncodeName(fileName);
 		var uploadId = await MultipartStart(encodedFileName, contentType, ct).ConfigureAwait(false);
 
 		return new S3Upload(this, fileName, encodedFileName, uploadId, _arrayPool);
